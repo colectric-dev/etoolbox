@@ -10,6 +10,7 @@ from contextlib import nullcontext, suppress
 from datetime import datetime
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 import click
 import orjson as json
@@ -93,14 +94,14 @@ def read_config() -> dict[str, str | dict[str, str | bool]]:
         cache_path = AZURE_BASE_CACHE_PATH / os.environ.get("ETB_AZURE_ACCOUNT_NAME")
         if not cache_path.exists():
             cache_path.mkdir()
-        config = {
+        config: dict[str, str | dict[str, Any]] = {
             "account_name": os.environ.get("ETB_AZURE_ACCOUNT_NAME"),
             "cache_path": cache_path,
         }
         token = os.environ.get("ETB_AZURE_SAS_TOKEN")
         if all(part in token.casefold() for part in ("azure", "cli")):
-            config["auth"] = {"anon": False}
             config["auth_pl"] = {"use_azure_cli": "True"}
+            config["auth"] = {"anon": False}
         else:
             config["auth_pl"] = config["auth"] = {"sas_token": token}
         return config
@@ -269,7 +270,7 @@ def rmi_cloud_fs(account_name=None, token=None) -> WholeFileCacheFileSystem:
             else account_name,
         }
         | auth,
-        cache_storage=config["cache_path"],
+        cache_storage=str(config["cache_path"]),
         check_files=True,
         cache_timeout=None,
     )
