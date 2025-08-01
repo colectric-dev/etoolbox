@@ -3,16 +3,16 @@ eToolBox: A set of tools and functions we use across projects
 
 .. readme-intro
 
-.. image:: https://github.com/rmi/etoolbox/workflows/tox-pytest/badge.svg
-   :target: https://github.com/rmi/etoolbox/actions?query=workflow%3Atox-pytest
+.. image:: https://github.com/colectric-dev/etoolbox/workflows/tox-pytest/badge.svg
+   :target: https://github.com/colectric-dev/etoolbox/actions?query=workflow%3Atox-pytest
    :alt: Tox-PyTest Status
 
-.. image:: https://github.com/rmi/etoolbox/workflows/docs/badge.svg
-   :target: https://rmi.github.io/etoolbox/
+.. image:: https://github.com/colectric-dev/etoolbox/workflows/docs/badge.svg
+   :target: https://colectric-dev.github.io/etoolbox/
    :alt: GitHub Pages Status
 
-.. image:: https://coveralls.io/repos/github/RMI/etoolbox/badge.svg?branch=main
-   :target: https://coveralls.io/github/RMI/etoolbox?branch=main
+.. image:: https://coveralls.io/repos/github/colectric-dev/etoolbox/badge.svg?branch=main
+   :target: https://coveralls.io/github/colectric-dev/etoolbox?branch=main
 
 .. image:: https://img.shields.io/badge/code%20style-black-000000.svg
    :target: https://github.com/psf/black>
