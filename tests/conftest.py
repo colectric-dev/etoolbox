@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from etoolbox.utils.cloud import etb_cloud_init
 from etoolbox.utils.logging_utils import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -95,39 +96,95 @@ def pudl_test_cache_for_ep(temp_dir):
     (pudl.CACHE_PATH.parent / "cache").touch()
 
 
-@pytest.fixture
-def cloud_test_cache(temp_dir):
+@pytest.fixture(scope="class")
+def cloud_test_cache_persistent(temp_dir):
     """Setup dummy cloud cache and config directories for testing."""
     import etoolbox.utils.cloud as cloud
 
     original_paths = (
         cloud.CONFIG_PATH,
-        cloud.ETB_AZURE_TOKEN_PATH,
-        cloud.ETB_AZURE_ACCOUNT_NAME_PATH,
+        cloud.ETB_AZURE_CONFIG_PATH,
+        cloud.AZURE_BASE_CACHE_PATH,
     )
 
-    cloud.AZURE_CACHE_PATH = temp_dir / "rmi.cloud.cache"
-    cloud.CONFIG_PATH = temp_dir / "rmi.cloud"
-    cloud.ETB_AZURE_TOKEN_PATH = cloud.CONFIG_PATH / "rmicfezil_token.txt"
-    cloud.ETB_AZURE_ACCOUNT_NAME_PATH = cloud.CONFIG_PATH / "etb_azure_account_name.txt"
+    cloud.CONFIG_PATH = temp_dir / "etb-cloud_persistent"
+    cloud.AZURE_BASE_CACHE_PATH = temp_dir / "rmi.cloud.cache_persistent"
+    cloud.ETB_AZURE_CONFIG_PATH = cloud.CONFIG_PATH / "etb_azure_config.json"
 
-    cloud.AZURE_CACHE_PATH.mkdir(exist_ok=True, parents=True)
+    cloud.AZURE_BASE_CACHE_PATH.mkdir(exist_ok=True, parents=True)
     cloud.CONFIG_PATH.mkdir(exist_ok=True, parents=True)
+    cloud.read_config.cache_clear()
     yield
 
-    shutil.rmtree(temp_dir / "rmi.cloud.cache", ignore_errors=True)
-    cloud.CONFIG_PATH, cloud.ETB_AZURE_TOKEN_PATH, cloud.ETB_AZURE_ACCOUNT_NAME_PATH = (
+    shutil.rmtree(cloud.AZURE_BASE_CACHE_PATH, ignore_errors=True)
+    shutil.rmtree(cloud.CONFIG_PATH, ignore_errors=True)
+    cloud.CONFIG_PATH, cloud.ETB_AZURE_CONFIG_PATH, cloud.AZURE_BASE_CACHE_PATH = (
         original_paths
     )
+    cloud.read_config.cache_clear()
 
 
 @pytest.fixture
-def cloud_test_cache_w_files(cloud_test_cache):
+def cloud_test_cache(temp_dir):
+    """Setup dummy cloud cache and config directories for testing."""
+    import etoolbox.utils.cloud as cloud
+
+    original_config = cloud.read_config()
+
+    original_paths = (
+        cloud.CONFIG_PATH,
+        cloud.ETB_AZURE_CONFIG_PATH,
+        cloud.AZURE_BASE_CACHE_PATH,
+    )
+
+    cloud.CONFIG_PATH = temp_dir / "etb-cloud"
+    cloud.AZURE_BASE_CACHE_PATH = temp_dir / "rmi.cloud.cache"
+    cloud.ETB_AZURE_CONFIG_PATH = cloud.CONFIG_PATH / "etb_azure_config.json"
+
+    cloud.AZURE_BASE_CACHE_PATH.mkdir(exist_ok=True, parents=True)
+    cloud.CONFIG_PATH.mkdir(exist_ok=True, parents=True)
+    cloud.read_config.cache_clear()
+    yield
+
+    shutil.rmtree(cloud.AZURE_BASE_CACHE_PATH, ignore_errors=True)
+    shutil.rmtree(cloud.CONFIG_PATH, ignore_errors=True)
+    cloud.CONFIG_PATH, cloud.ETB_AZURE_CONFIG_PATH, cloud.AZURE_BASE_CACHE_PATH = (
+        original_paths
+    )
+    cloud.read_config.cache_clear()
+
+
+@pytest.fixture
+def cloud_test_cache_w_files(temp_dir):
     """Setup dummy cloud cache and config files for testing."""
     import etoolbox.utils.cloud as cloud
 
+    original_config = cloud.read_config()
+    original_paths = (
+        cloud.CONFIG_PATH,
+        cloud.ETB_AZURE_CONFIG_PATH,
+        cloud.AZURE_BASE_CACHE_PATH,
+    )
+
+    cloud.CONFIG_PATH = temp_dir / "etb-cloud"
+    cloud.AZURE_BASE_CACHE_PATH = temp_dir / "rmi.cloud.cache"
+    cloud.ETB_AZURE_CONFIG_PATH = cloud.CONFIG_PATH / "etb_azure_config.json"
+
+    cloud.AZURE_BASE_CACHE_PATH.mkdir(exist_ok=True, parents=True)
+    cloud.CONFIG_PATH.mkdir(exist_ok=True, parents=True)
+    cloud.read_config.cache_clear()
+    etb_cloud_init(original_config["account_name"], "use_azure_cli", False)
+
     fs = cloud.rmi_cloud_fs()
     _ = pd.read_parquet("az://patio-data/test_data.parquet", filesystem=fs)
+    yield original_config["account_name"]
+
+    shutil.rmtree(cloud.AZURE_BASE_CACHE_PATH, ignore_errors=True)
+    shutil.rmtree(cloud.CONFIG_PATH, ignore_errors=True)
+    cloud.CONFIG_PATH, cloud.ETB_AZURE_CONFIG_PATH, cloud.AZURE_BASE_CACHE_PATH = (
+        original_paths
+    )
+    cloud.read_config.cache_clear()
 
 
 @pytest.fixture(scope="session")

@@ -4,25 +4,14 @@ import shutil
 import sys
 from pathlib import Path
 
+import orjson as json
 import pytest
 
 from etoolbox.utils.testing import idfn
 
 
-class TestCloudEntryPoint:
-    @pytest.mark.usefixtures("cloud_test_cache")
-    @pytest.mark.script_launch_mode("inprocess")
-    def test_cloud_init_dry(self, script_runner):
-        """Test rmi cloud init entry point dry."""
-        import etoolbox.utils.cloud as cloud
-
-        script_runner.run(
-            ["etb", "cloud", "init", "abc", "123", "-d"], print_result=True
-        )
-        assert not cloud.ETB_AZURE_TOKEN_PATH.exists()
-        assert not cloud.ETB_AZURE_ACCOUNT_NAME_PATH.exists()
-
-    @pytest.mark.usefixtures("cloud_test_cache")
+class TestCloudEntryPointPersistent:
+    @pytest.mark.usefixtures("cloud_test_cache_persistent")
     @pytest.mark.script_launch_mode("inprocess")
     def test_cloud_init(self, script_runner):
         """Test rmi cloud init entry point."""
@@ -32,12 +21,12 @@ class TestCloudEntryPoint:
             ["etb", "cloud", "init", "abc", "sv=123"],
             print_result=True,
         )
-        with open(cloud.ETB_AZURE_TOKEN_PATH, "rb") as f:
-            assert f.read() == b"c3Y9MTIz"
-        with open(cloud.ETB_AZURE_ACCOUNT_NAME_PATH) as f:
-            assert f.read() == "abc"
+        with open(cloud.ETB_AZURE_CONFIG_PATH) as f:
+            config = json.loads(f.read())["abc"]
+        assert config["auth"]["sas_token"] == "c3Y9MTIz"  # noqa: S105
+        assert config["account_name"] == "abc"
 
-    @pytest.mark.usefixtures("cloud_test_cache")
+    @pytest.mark.usefixtures("cloud_test_cache_persistent")
     @pytest.mark.script_launch_mode("inprocess")
     def test_cloud_init_clobber(self, script_runner):
         """Test rmi cloud init entry point clobber."""
@@ -46,11 +35,32 @@ class TestCloudEntryPoint:
         script_runner.run(
             ["etb", "cloud", "init", "def", "456", "-c"], print_result=True
         )
-        with open(cloud.ETB_AZURE_TOKEN_PATH, "rb") as f:
-            assert f.read() == b"456"
-        with open(cloud.ETB_AZURE_ACCOUNT_NAME_PATH) as f:
-            assert f.read() == "def"
+        with open(cloud.ETB_AZURE_CONFIG_PATH) as f:
+            config = json.loads(f.read())["def"]
+        assert config["auth"]["sas_token"] == "456"  # noqa: S105
+        assert config["account_name"] == "def"
 
+    @pytest.mark.usefixtures("cloud_test_cache_persistent")
+    @pytest.mark.script_launch_mode("inprocess")
+    def test_cloud_add(self, script_runner):
+        """Test rmi cloud init entry point clobber."""
+        import etoolbox.utils.cloud as cloud
+
+        with open(cloud.ETB_AZURE_CONFIG_PATH) as f:
+            old_config = json.loads(f.read())
+        assert "ghi" not in old_config
+
+        _ = script_runner.run(
+            ["etb", "cloud", "add", "ghi", "azure_cli"], print_result=True
+        )
+        with open(cloud.ETB_AZURE_CONFIG_PATH) as f:
+            config = json.loads(f.read())
+        assert all(k in config for k in old_config)
+        assert config["active"] == "ghi"
+        assert "sas_token" not in config["ghi"]["auth"]
+
+
+class TestCloudEntryPoint:
     @pytest.mark.script_launch_mode("inprocess")
     def test_cloud_list(self, script_runner):
         """Test rmi cloud list entry point."""
@@ -93,45 +103,63 @@ class TestCloudEntryPoint:
         assert path.exists()
         path.unlink()
 
-    @pytest.mark.usefixtures("cloud_test_cache_w_files")
     @pytest.mark.script_launch_mode("inprocess")
-    def test_cloud_clean(self, script_runner):
+    def test_cloud_clean(self, script_runner, cloud_test_cache_w_files):
         """Test the rmi cloud clean entry point."""
         import etoolbox.utils.cloud as cloud
 
-        script_runner.run(["etb", "cloud", "clean"], print_result=True)
-        assert not cloud.AZURE_CACHE_PATH.exists()
+        assert (cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).exists()
 
-    @pytest.mark.usefixtures("cloud_test_cache_w_files")
+        result = script_runner.run(["etb", "cloud", "clean"], print_result=True)
+        assert result.success
+
+        assert not (cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).exists()
+
     @pytest.mark.script_launch_mode("inprocess")
-    def test_cloud_clean_dry(self, script_runner):
+    def test_cloud_clean_dry(self, script_runner, cloud_test_cache_w_files):
         """Test the rmi cloud clean entry point."""
         import etoolbox.utils.cloud as cloud
 
-        script_runner.run(["etb", "cloud", "clean", "-d"], print_result=True)
-        assert cloud.AZURE_CACHE_PATH.exists()
-        assert any(cloud.AZURE_CACHE_PATH.iterdir())
+        assert (cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).exists()
+        assert any((cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).iterdir())
 
-    @pytest.mark.usefixtures("cloud_test_cache_w_files")
+        result = script_runner.run(["etb", "cloud", "clean", "-d"], print_result=True)
+
+        assert result.success
+        assert (cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).exists()
+        assert any((cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).iterdir())
+
     @pytest.mark.script_launch_mode("inprocess")
-    def test_cloud_clean_all(self, script_runner):
+    def test_cloud_clean_all_dry(self, script_runner, cloud_test_cache_w_files):
         """Test the rmi cloud clean entry point."""
         import etoolbox.utils.cloud as cloud
 
-        script_runner.run(["etb", "cloud", "clean", "-a"], print_result=True)
-        assert not cloud.AZURE_CACHE_PATH.exists()
-        assert not cloud.CONFIG_PATH.exists()
-
-    @pytest.mark.usefixtures("cloud_test_cache_w_files")
-    @pytest.mark.script_launch_mode("inprocess")
-    def test_cloud_clean_all_dry(self, script_runner):
-        """Test the rmi cloud clean entry point."""
-        import etoolbox.utils.cloud as cloud
-
-        script_runner.run(["etb", "cloud", "clean", "-a", "-d"], print_result=True)
-        assert cloud.AZURE_CACHE_PATH.exists()
-        assert any(cloud.AZURE_CACHE_PATH.iterdir())
+        assert (cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).exists()
+        assert any((cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).iterdir())
         assert cloud.CONFIG_PATH.exists()
+
+        result = script_runner.run(
+            ["etb", "cloud", "clean", "-a", "-d"], print_result=True
+        )
+
+        assert result.success
+        assert (cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).exists()
+        assert any((cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).iterdir())
+        assert cloud.CONFIG_PATH.exists()
+
+    @pytest.mark.script_launch_mode("inprocess")
+    def test_cloud_clean_all(self, script_runner, cloud_test_cache_w_files):
+        """Test the rmi cloud clean entry point."""
+        import etoolbox.utils.cloud as cloud
+
+        assert (cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).exists()
+        assert cloud.CONFIG_PATH.exists()
+
+        result = script_runner.run(["etb", "cloud", "clean", "-a"], print_result=True)
+
+        assert result.success
+        assert not (cloud.AZURE_BASE_CACHE_PATH / cloud_test_cache_w_files).exists()
+        assert not cloud.CONFIG_PATH.exists()
 
     @pytest.mark.usefixtures("cloud_test_cache_w_files")
     @pytest.mark.script_launch_mode("inprocess")

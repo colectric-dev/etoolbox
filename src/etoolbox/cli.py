@@ -4,15 +4,17 @@ from pathlib import Path
 
 import click
 import numpy as np
+import orjson as json
 import pandas as pd
 
 from etoolbox import __version__
 from etoolbox.utils.cloud import (
-    AZURE_CACHE_PATH,
+    ETB_AZURE_CONFIG_PATH,
     cache_info,
     cloud_clean,
-    cloud_init,
     cloud_list,
+    etb_cloud_add,
+    etb_cloud_init,
     get,
     put,
 )
@@ -146,8 +148,7 @@ def etb_cloud_cache():
 
 @cloud.command(
     "clean",
-    help=f"Delete local cache of Azure files in "
-    f"{AZURE_CACHE_PATH.relative_to(Path.home())}.",
+    help="Delete local cache of Azure files in.",
 )
 @click.option("-d", "--dry-run", default=False, is_flag=True)
 @click.option(
@@ -171,23 +172,59 @@ def etb_cloud_clean(*, dry_run: bool, all_: bool):
 @click.argument("account_name", type=str, required=False, default="")
 @click.argument("token", type=str, required=False, default="")
 @click.option(
-    "-d",
-    "--dry-run",
-    default=False,
-    is_flag=True,
-    show_default=True,
-)
-@click.option(
     "-c",
     "--clobber",
     is_flag=True,
     default=False,
     show_default=True,
-    help="Overwrite existing files.",
+    help="Overwrite existing configuration file",
 )
-def etb_cloud_init(account_name, token, *, dry_run: bool, clobber: bool):
-    """Write SAS token file to disk."""
-    cloud_init(account_name, token, dry_run=dry_run, clobber=clobber)
+def _etb_cloud_init(account_name, token, clobber):
+    """Write SAS token file to disk.
+
+    ACCOUNT_NAME: Azure account name.
+    TOKEN: SAS token for the account, enter ``use_azure_cli`` to use that method
+        rather than a token.
+    """
+    etb_cloud_init(account_name, token, clobber)
+
+
+@cloud.command("add", help="Add a new Azure account.")
+@click.argument("account_name", type=str, required=False, default="")
+@click.argument("token", type=str, required=False, default="")
+@click.option(
+    "-x",
+    "--no-activate",
+    default=False,
+    is_flag=True,
+    show_default=True,
+    help="do not activate the newly added account, default is to activate it",
+)
+def _etb_cloud_add(account_name, token, *, no_activate):
+    """Add a new Azure account.
+
+    ACCOUNT_NAME: Azure account name to add.
+    TOKEN: SAS token for the account, enter ``use_azure_cli`` to use that method
+        rather than a token.
+    """
+    etb_cloud_add(account_name, token, no_activate)
+
+
+@cloud.command("activate", help="Activate an Azure account globally.")
+@click.argument("account_name", type=str, required=True)
+def etb_cloud_activate(account_name, token, *, no_activate):
+    """Activate an Azure account globally.
+
+    ACCOUNT_NAME: Azure account name to activate.
+    """
+    with open(ETB_AZURE_CONFIG_PATH) as f:
+        configs = json.loads(f.read())
+    if account_name in configs:
+        configs["active"] = account_name
+        with open(ETB_AZURE_CONFIG_PATH, "wb") as f:
+            f.write(json.dumps(configs, option=json.OPT_INDENT_2))
+    else:
+        raise ValueError(f"{account_name} not in configs, add it using `etb cloud add`")
 
 
 @main.group(help="PUDL utilities.")

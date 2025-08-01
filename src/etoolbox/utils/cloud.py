@@ -1,17 +1,18 @@
 """Tools for working with RMI's Azure storage."""
 
 import base64
-import json
 import logging
 import os
 import shutil
 import subprocess
-from contextlib import nullcontext
+import warnings
+from contextlib import nullcontext, suppress
 from datetime import datetime
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 import click
+import orjson as json
 import pandas as pd
 import polars as pl
 import tomllib
@@ -32,147 +33,150 @@ except (ImportError, ModuleNotFoundError):
 
 
 CONFIG_PATH = user_config_path("rmi.cloud", ensure_exists=True)
-AZURE_CACHE_PATH = user_cache_path("rmi.cloud", ensure_exists=True)
+AZURE_BASE_CACHE_PATH = user_cache_path("rmi.cloud", ensure_exists=True)
+ETB_AZURE_CONFIG_PATH = CONFIG_PATH / "etb_azure_config.json"
 ETB_AZURE_TOKEN_PATH = CONFIG_PATH / "etb_azure_token.txt"
 ETB_AZURE_ACCOUNT_NAME_PATH = CONFIG_PATH / "etb_azure_account_name.txt"
 
 logger = logging.getLogger("etoolbox")
 
 
+@property
+def AZURE_CACHE_PATH():  # noqa: N802
+    """For compatibility."""
+    warnings.warn("use read_config()['cache_path']", DeprecationWarning, stacklevel=2)
+    return read_config()["cache_path"]
+
+
+def convert_cloud_config(*, keep_old):
+    """Convert config and cache to new setup / schema."""
+    account_name = ETB_AZURE_ACCOUNT_NAME_PATH.read_text()
+    cache_path = AZURE_BASE_CACHE_PATH / account_name
+    if not cache_path.exists():
+        cache_path.mkdir()
+    old_cache = user_cache_path("rmi.cloud")
+    if AZURE_BASE_CACHE_PATH.exists() and not keep_old:
+        for file in old_cache.iterdir():
+            if file.is_dir():
+                continue
+            shutil.move(file, cache_path)
+    if (old_path := CONFIG_PATH / "rmicfezil_token.txt").exists():
+        with open(old_path) as f:
+            token = base64.b64encode(f.read().encode("utf-8"))
+    else:
+        token = ETB_AZURE_TOKEN_PATH.read_text()
+    if isinstance(token, bytes):
+        token = token.decode("utf8")
+    out = {
+        "active": account_name,
+        account_name: {
+            "account_name": account_name,
+            "auth": {"sas_token": token},
+            "cache_path": str(cache_path),
+        },
+    }
+    with open(ETB_AZURE_CONFIG_PATH, "wb") as f:
+        f.write(json.dumps(out, option=json.OPT_INDENT_2))
+    if keep_old:
+        return None
+    for p in (old_path, ETB_AZURE_TOKEN_PATH, ETB_AZURE_ACCOUNT_NAME_PATH):
+        with suppress(Exception):
+            p.unlink()
+
+
+@cache
+def read_config() -> dict[str, str | dict[str, str | bool]]:
+    """Read configs and return active config."""
+    if all(
+        os.environ.get(v) for v in ("ETB_AZURE_SAS_TOKEN", "ETB_AZURE_ACCOUNT_NAME")
+    ):
+        cache_path = AZURE_BASE_CACHE_PATH / os.environ.get("ETB_AZURE_ACCOUNT_NAME")
+        if not cache_path.exists():
+            cache_path.mkdir()
+        config = {
+            "account_name": os.environ.get("ETB_AZURE_ACCOUNT_NAME"),
+            "cache_path": cache_path,
+        }
+        token = os.environ.get("ETB_AZURE_SAS_TOKEN")
+        if all(part in token.casefold() for part in ("azure", "cli")):
+            config["auth"] = {"anon": False}
+            config["auth_pl"] = {"use_azure_cli": "True"}
+        else:
+            config["auth_pl"] = config["auth"] = {"sas_token": token}
+        return config
+    if not ETB_AZURE_CONFIG_PATH.exists():
+        try:
+            convert_cloud_config(keep_old=True)
+        except Exception as exc:
+            raise RuntimeError(
+                "new config does not exist and unable to convert existing config, "
+                "run `etb cloud init`"
+            ) from exc
+    with open(ETB_AZURE_CONFIG_PATH) as f:
+        configs = json.loads(f.read())
+    config = configs[os.environ.get("ETB_AZURE_ACTIVE_ACCOUNT", configs["active"])]
+    if (tok := config["auth"].get("sas_token", None)) is not None:
+        config["auth_pl"] = config["auth"] = {
+            "sas_token": base64.b64decode(tok).decode("utf-8")
+        }
+    else:
+        config["auth_pl"] = {"use_azure_cli": "True"}
+    return config
+
+
 def cloud_clean(*, dry: bool = False, all_: bool = False):
     """Cleanup cache and config directories."""
+    config = read_config()
     info = cache_info()
     size = info["size"].sum() * 1e-6
     click.echo(
-        f"Will delete the following items using {size:,.0f} MB at {AZURE_CACHE_PATH}"
+        f"Will delete the following items using {size:,.0f} MB at "
+        f"{config['cache_path']}"
     )
     click.echo(info[["size", "time"]])
     if not dry:
-        shutil.rmtree(AZURE_CACHE_PATH, ignore_errors=True)
+        shutil.rmtree(config["cache_path"], ignore_errors=True)
     if all_:
         click.echo(f"deleting config {CONFIG_PATH}")
         if not dry:
             shutil.rmtree(CONFIG_PATH, ignore_errors=True)
 
 
-def cloud_setup():
-    """Interactive cloud setup."""
-    if not ETB_AZURE_ACCOUNT_NAME_PATH.exists():
-        account_name = click.prompt("Enter Azure Account Name: ")
-    else:
-        if (
-            click.prompt(
-                f"Azure Account Name is currently "
-                f"'{ETB_AZURE_ACCOUNT_NAME_PATH.read_text()}', "
-                f"would you like to change it? [y/N]",
-                default="n",
-            ).casefold()
-            == "y"
-        ):
-            account_name = click.prompt("Enter Azure Account Name: ")
-        else:
-            account_name = ""
-    if account_name:
-        with open(ETB_AZURE_ACCOUNT_NAME_PATH, "w") as f:
-            f.write(account_name.strip())
-        click.echo(
-            f"Azure account name: {account_name} written to "
-            f"{ETB_AZURE_ACCOUNT_NAME_PATH}."
-        )
-
-    if not ETB_AZURE_TOKEN_PATH.exists():
-        token = click.prompt("Enter Azure Token: ", type=str)
-    else:
-        if (
-            click.prompt(
-                "Azure Token exists, would you like to change it? [y/N]", default="n"
-            ).casefold()
-            == "y"
-        ):
-            token = click.prompt("Enter Azure Token: ", type=str)
-        else:
-            token = ""
-    if token:
-        token = token.strip("'").strip('"').encode("utf-8")
-        if token.startswith(b"sv="):
-            token = base64.b64encode(token)
-        with open(ETB_AZURE_TOKEN_PATH, "wb") as f:
-            f.write(token)
-        click.echo(f"SAS Token written to {ETB_AZURE_TOKEN_PATH}.")
+# @lru_cache
+# def read_token() -> str:
+#     """Read SAS token from disk or environment variable."""
+#
+#     with open(ETB_AZURE_CONFIG_PATH) as f:
+#         config = json.loads(f.read())
+#
+#     if ETB_AZURE_TOKEN_PATH.exists():
+#         return base64.b64decode(ETB_AZURE_TOKEN_PATH.read_text()).decode("utf-8")
+#     if (token := os.environ.get("ETB_AZURE_SAS_TOKEN")) is not None:
+#         return token
+#     if (old_path := CONFIG_PATH / "rmicfezil_token.txt").exists():
+#         with open(old_path) as f:
+#             token = f.read()
+#         with open(ETB_AZURE_TOKEN_PATH, "wb") as f:
+#             f.write(base64.b64encode(token.encode("utf-8")))
+#         old_path.unlink()
+#         return read_token()
+#     raise ValueError(
+#         "No SAS Token found, either run `etb cloud init` or set "
+#         "ETB_AZURE_SAS_TOKEN environment variable."
+#     )
 
 
-def cloud_init(
-    account_name: str,
-    token: bytes | str,
-    *,
-    dry_run: bool = False,
-    clobber: bool = False,
-):
-    """Write SAS token file to disk."""
-    if not account_name and not token:
-        return cloud_setup()
-    if ETB_AZURE_ACCOUNT_NAME_PATH.exists():
-        if not clobber:
-            raise FileExistsError("Account name already exists.")
-        click.echo(f"delete {ETB_AZURE_ACCOUNT_NAME_PATH}")
-        if not dry_run:
-            ETB_AZURE_ACCOUNT_NAME_PATH.unlink()
-    if ETB_AZURE_TOKEN_PATH.exists() and token:
-        if not clobber:
-            raise FileExistsError("SAS Token already exists.")
-        click.echo(f"delete {ETB_AZURE_TOKEN_PATH}")
-        if not dry_run:
-            ETB_AZURE_TOKEN_PATH.unlink()
-    if dry_run:
-        click.echo(f"write SAS Token to {ETB_AZURE_TOKEN_PATH}")
-        click.echo(f"write {account_name} to {ETB_AZURE_ACCOUNT_NAME_PATH}")
-        return
-    if token:
-        if isinstance(token, str):
-            token = token.strip("'").strip('"').encode("utf-8")
-        if token.startswith(b"sv="):
-            token = base64.b64encode(token)
-        with open(ETB_AZURE_TOKEN_PATH, "wb") as f:
-            f.write(token)
-        click.echo(f"SAS Token written to {ETB_AZURE_TOKEN_PATH}.")
-    with open(ETB_AZURE_ACCOUNT_NAME_PATH, "w") as f:
-        f.write(account_name)
-    click.echo(
-        f"Azure account name: {account_name} written to {ETB_AZURE_ACCOUNT_NAME_PATH}."
-    )
-
-
-@lru_cache
-def read_token() -> str:
-    """Read SAS token from disk or environment variable."""
-    if ETB_AZURE_TOKEN_PATH.exists():
-        return base64.b64decode(ETB_AZURE_TOKEN_PATH.read_text()).decode("utf-8")
-    if (token := os.environ.get("ETB_AZURE_SAS_TOKEN")) is not None:
-        return token
-    if (old_path := CONFIG_PATH / "rmicfezil_token.txt").exists():
-        with open(old_path) as f:
-            token = f.read()
-        with open(ETB_AZURE_TOKEN_PATH, "wb") as f:
-            f.write(base64.b64encode(token.encode("utf-8")))
-        old_path.unlink()
-        return read_token()
-    raise ValueError(
-        "No SAS Token found, either run `etb cloud init` or set "
-        "ETB_AZURE_SAS_TOKEN environment variable."
-    )
-
-
-@lru_cache
-def read_account_name() -> str:
-    """Read SAS token from disk or environment variable."""
-    if ETB_AZURE_ACCOUNT_NAME_PATH.exists():
-        return ETB_AZURE_ACCOUNT_NAME_PATH.read_text()
-    elif (token := os.environ.get("ETB_AZURE_ACCOUNT_NAME")) is not None:
-        return token
-    raise ValueError(
-        "No Azure account name found, either re-run `etb cloud init` "
-        "or set ETB_AZURE_ACCOUNT_NAME environment variable."
-    )
+# @lru_cache
+# def read_account_name() -> str:
+#     """Read SAS token from disk or environment variable."""
+#     if ETB_AZURE_ACCOUNT_NAME_PATH.exists():
+#         return ETB_AZURE_ACCOUNT_NAME_PATH.read_text()
+#     elif (token := os.environ.get("ETB_AZURE_ACCOUNT_NAME")) is not None:
+#         return token
+#     raise ValueError(
+#         "No Azure account name found, either re-run `etb cloud init` "
+#         "or set ETB_AZURE_ACCOUNT_NAME environment variable."
+#     )
 
 
 def storage_options():
@@ -201,11 +205,9 @@ def storage_options():
     └────────────────────┴──────────────────┘
 
     """
+    config = read_config()
     return {
-        "storage_options": {
-            "account_name": read_account_name(),
-            "sas_token": read_token(),
-        }
+        "storage_options": {"account_name": config["account_name"]} | config["auth_pl"]
     }
 
 
@@ -256,16 +258,18 @@ def rmi_cloud_fs(account_name=None, token=None) -> WholeFileCacheFileSystem:
     ...     df.write_parquet(f)
 
     """
+    config = read_config()
+    auth = config["auth"] if token is None else {"sas_token": token}
     return filesystem(
         "filecache",
         target_protocol="az",
         target_options={
-            "account_name": read_account_name()
+            "account_name": config["account_name"]
             if account_name is None
             else account_name,
-            "sas_token": read_token() if token is None else token,
-        },
-        cache_storage=str(AZURE_CACHE_PATH),
+        }
+        | auth,
+        cache_storage=config["cache_path"],
         check_files=True,
         cache_timeout=None,
     )
@@ -273,16 +277,18 @@ def rmi_cloud_fs(account_name=None, token=None) -> WholeFileCacheFileSystem:
 
 def cache_info():
     """Return info about cloud cache contents."""
-    with open(AZURE_CACHE_PATH / "cache", "rb") as f:
-        cache_data = json.load(f)
+    config = read_config()
+    cache_path = Path(config["cache_path"])
+    with open(cache_path / "cache", "rb") as f:
+        cache_data = json.loads(f.read())
     cdl = [
         v
         | {
-            "size": (AZURE_CACHE_PATH / v["fn"]).stat().st_size,
+            "size": (cache_path / v["fn"]).stat().st_size,
             "time": datetime.fromtimestamp(v["time"]),
         }
         for v in cache_data.values()
-        if (AZURE_CACHE_PATH / v["fn"]).exists()
+        if (cache_path / v["fn"]).exists()
     ]
     return pd.DataFrame.from_records(cdl).set_index("original")[
         ["time", "size", "fn", "uid"]
@@ -361,10 +367,15 @@ def get(
         clobber: overwrite existing files and directories if True
         azcopy_path: path to azcopy executable
     """
+    config = read_config()
+    account_name = config["account_name"]
     to_get_path = (
         to_get_path.removeprefix("az://")
         .removeprefix("abfs://")
-        .removeprefix(f"https://{read_account_name()}.blob.core.windows.net/")
+        .removeprefix(f"https://{account_name}.blob.core.windows.net/")
+    )
+    token = (
+        "" if (tok := config["auth_pl"].get("sas_token", None)) is None else f"?{tok}"
     )
     try:
         subprocess.run([azcopy_path], capture_output=True)  # noqa: S603
@@ -389,7 +400,7 @@ def get(
             [
                 azcopy_path,
                 "cp",
-                f"https://{read_account_name()}.blob.core.windows.net/{to_get_path}?{read_token()}",
+                f"https://{account_name}.blob.core.windows.net/{to_get_path}{token}",
                 f"{destination}",
                 f"--overwrite={str(clobber).casefold()}",
                 "--recursive=True",
@@ -425,10 +436,15 @@ def put(
     if not to_put_path.exists():
         raise FileNotFoundError(to_put_path)
     lpath = str(to_put_path)
+    config = read_config()
+    account_name = config["account_name"]
     destination = (
         destination.removeprefix("az://")
         .removeprefix("abfs://")
-        .removeprefix(f"https://{read_account_name()}.blob.core.windows.net/")
+        .removeprefix(f"https://{account_name}.blob.core.windows.net/")
+    )
+    token = (
+        "" if (tok := config["auth_pl"].get("sas_token", None)) is None else f"?{tok}"
     )
     recursive = to_put_path.is_dir()
     try:
@@ -450,7 +466,7 @@ def put(
                 azcopy_path,
                 "cp",
                 lpath,
-                f"https://{read_account_name()}.blob.core.windows.net/{destination}?{read_token()}",
+                f"https://{account_name}.blob.core.windows.net/{destination}{token}",
                 f"--overwrite={str(clobber).casefold()}",
                 f"--recursive={str(recursive).casefold()}",
             ],
@@ -509,7 +525,7 @@ def read_cloud_file(filename: str) -> dict[str, pd.DataFrame] | pd.DataFrame:
     """
     fs = rmi_cloud_fs()
     filename = "az://" + filename.removeprefix("az://").removeprefix("abfs://")
-
+    config = read_config()
     if ".parquet" in filename:
         try:
             return pd.read_parquet(filename, filesystem=fs)
@@ -521,7 +537,7 @@ def read_cloud_file(filename: str) -> dict[str, pd.DataFrame] | pd.DataFrame:
             return pd.read_csv(fp)
     if ".json" in filename:
         with fs.open(filename, "rb") as fp:
-            return json.load(fp)
+            return json.loads(fp.read())
     if ".toml" in filename:
         with fs.open(filename, "rb") as fp:
             return tomllib.load(fp)
@@ -534,7 +550,7 @@ def read_cloud_file(filename: str) -> dict[str, pd.DataFrame] | pd.DataFrame:
     if ".zip" in filename:
         f = fs.open(filename)
         f.close()
-        with DataZip(str(AZURE_CACHE_PATH / cached_path(filename)), "r") as z:
+        with DataZip(str(Path(config["cache_path"]) / cached_path(filename)), "r") as z:
             return dict(z.items())
     raise ValueError(
         f"{filename} is not a parquet, csv, json, toml, txt, yaml/yml, or zip."
@@ -570,3 +586,76 @@ def write_cloud_file(data: pd.DataFrame | str | bytes, filename: str) -> None:
             f.write(data.encode("utf-8") if isinstance(data, str) else data)
     else:
         raise RuntimeError(f"Unsupported type {type(data)}")
+
+
+def etb_cloud_init(account_name, token, clobber):
+    """Write SAS token file to disk.
+
+    ACCOUNT_NAME: Azure account name.
+    TOKEN: SAS token for the account, enter ``use_azure_cli`` to use that method
+        rather than a token.
+    """
+    if ETB_AZURE_CONFIG_PATH.exists():
+        if clobber:
+            ETB_AZURE_CONFIG_PATH.unlink()
+        else:
+            raise FileExistsError(
+                f"configuration already exists at {ETB_AZURE_CONFIG_PATH}, either use "
+                f"`--clobber` flag to start from scratch or `etb cloud add` to add a "
+                f"new account alongside the existing one."
+            )
+    configs = build_config_interactive(account_name, token)
+    account_name, *_ = tuple(configs)
+    with open(ETB_AZURE_CONFIG_PATH, "wb") as f:
+        f.write(
+            json.dumps(configs | {"active": account_name}, option=json.OPT_INDENT_2)
+        )
+
+
+def build_config_interactive(account_name, token):
+    """Create config from args or user input."""
+    if not account_name:
+        account_name = click.prompt("Enter Azure Account Name: ")
+    cache_path = AZURE_BASE_CACHE_PATH / account_name
+    if not cache_path.exists():
+        cache_path.mkdir()
+    new_config = {
+        account_name: {"account_name": account_name, "cache_path": str(cache_path)}
+    }
+    if not token:
+        use_cli = click.prompt("Use Azure CLI authentication? [y/N]", default="n")
+        if use_cli.casefold() == "n":
+            token = click.prompt("Enter Azure Token: ", type=str)
+        else:
+            token = "use_azure_cli"  # noqa: S105
+    if all(part in token.casefold() for part in ("azure", "cli")):
+        new_config[account_name]["auth"] = {"anon": False}
+    else:
+        token = token.strip("'").strip('"').encode("utf-8")
+        if token.startswith(b"sv="):
+            token = base64.b64encode(token)
+        if isinstance(token, bytes):
+            token = token.decode("utf8")
+        new_config[account_name]["auth"] = {"sas_token": token}
+    return new_config
+
+
+def etb_cloud_add(account_name, token, no_activate):
+    """Add a new Azure account.
+
+    account_name: Azure account name to add.
+    token: SAS token for the account, enter ``use_azure_cli`` to use that method
+        rather than a token.
+    """
+    if not ETB_AZURE_CONFIG_PATH.exists() and ETB_AZURE_ACCOUNT_NAME_PATH.exists():
+        convert_cloud_config(keep_old=True)
+    new_config = build_config_interactive(account_name, token)
+    account_name, *_ = tuple(new_config)
+    if ETB_AZURE_CONFIG_PATH.exists():
+        activate = {} if no_activate else {"active": account_name}
+        with open(ETB_AZURE_CONFIG_PATH) as f:
+            configs = json.loads(f.read()) | new_config | activate
+    else:
+        configs = new_config | {"active": account_name}
+    with open(ETB_AZURE_CONFIG_PATH, "wb") as f:
+        f.write(json.dumps(configs, option=json.OPT_INDENT_2))

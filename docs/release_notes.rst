@@ -22,6 +22,9 @@ What's New?
    a filename which can represent any file in any of the account's containers.
 *  Remove :mod:`.remote_zip` as we never used it or actively maintained it.
    If that functionality is needed, use the original package `python-remotezip <https://github.com/gtsystem/python-remotezip>`_.
+*  :mod:`etoolbox.utils.cloud` now allows multiple cloud accounts to have configs
+   and caches with a process for activating the desired one globally. Environment
+   variable ``ETB_AZURE_ACTIVE_ACCOUNT`` can override this global setting.
 
 Bug Fixes
 ^^^^^^^^^
