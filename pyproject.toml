@@ -80,6 +80,10 @@ version = { attr = "etoolbox._version.__version__" }
 [tool.setuptools_scm]
 write_to = "src/etoolbox/_version.py"
 
+[tool.pixi.workspace]
+channels = [ "conda-forge" ]
+platforms = [ "osx-arm64", "linux-64" ]
+
 #######################################################################################
 # Configurations for linters and other tools
 #######################################################################################
