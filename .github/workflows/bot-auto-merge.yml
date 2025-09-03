@@ -15,15 +15,18 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_KEY }}
-      - name: Enable auto-merge for Dependabot PRs
-        if: github.event.pull_request.user.login == 'dependabot[bot]'
-        run: gh pr merge --auto --rebase "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
-      - name: Enable auto-merge for Pre-commit-ci PRs
-        if: github.event.pull_request.user.login == 'pre-commit-ci[bot]'
-        run: gh pr merge --auto --rebase "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+      - name: Auto-merge passing dependabot PRs
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        uses: ridedott/merge-me-action@v2
+        with:
+          # For clarity only. dependabot is default.
+          GITHUB_LOGIN: dependabot
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+          ENABLED_FOR_MANUAL_CHANGES: "true"
+      - name: Auto-merge passing pre-commit-ci PRs
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        uses: ridedott/merge-me-action@v2
+        with:
+          GITHUB_LOGIN: pre-commit-ci
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+          ENABLED_FOR_MANUAL_CHANGES: "true"
