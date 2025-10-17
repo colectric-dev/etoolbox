@@ -560,7 +560,7 @@ class DataZip(ZipFile):
 
     def _decode_pd_series(self, obj) -> pd.Series:
         out = pd.read_parquet(BytesIO(self.read(obj["__loc__"]))).squeeze()
-        cols, names = obj.get("no_pqt_cols", (None, None))
+        cols, _names = obj.get("no_pqt_cols", (None, None))
         out.name = tuple(cols) if isinstance(cols, list) else cols
         return (
             out.astype(obj["dtypes"])
