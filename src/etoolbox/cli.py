@@ -142,7 +142,7 @@ def etb_cloud_cache():
         .sort_values(["blob", "time"])
         .set_index(["blob", "original"])[["time", "size", "fn", "uid"]]
     )
-    click.echo(info)
+    click.echo(info.to_string())
     click.echo(f"\nTotal size: {info['size'].sum():,.0f} MB")
 
 
@@ -270,7 +270,7 @@ def etb_pudl_cache():
         uid=lambda x: x["uid"].str.slice(0, 5) + "...",
         size=lambda x: np.round(x["size"] * 1e-6, 1),
     )
-    click.echo(info)
+    click.echo(info.to_string())
     click.echo(f"\nTotal size: {info['size'].sum():,.0f} MB")
 
 
