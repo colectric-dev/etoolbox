@@ -6,8 +6,9 @@ permissions:
   pull-requests: write
 
 jobs:
-  auto-merge:
+  dependabot:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
       - name: Generate a token
         id: generate-token
@@ -15,18 +16,38 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_KEY }}
-      - name: Auto-merge passing dependabot PRs
-        if: ${{ github.event.workflow_run.conclusion == 'success' }}
-        uses: ridedott/merge-me-action@v2
+      - name: Enable auto-merge for Dependabot PRs
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{github.event.pull_request.html_url}}
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+  pre-commit:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'pre-commit-ci[bot]'
+    steps:
+      - name: Generate a token
+        id: generate-token
+        uses: actions/create-github-app-token@v2
         with:
-          # For clarity only. dependabot is default.
-          GITHUB_LOGIN: dependabot
-          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
-          ENABLED_FOR_MANUAL_CHANGES: "true"
-      - name: Auto-merge passing pre-commit-ci PRs
-        if: ${{ github.event.workflow_run.conclusion == 'success' }}
-        uses: ridedott/merge-me-action@v2
-        with:
-          GITHUB_LOGIN: pre-commit-ci
-          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
-          ENABLED_FOR_MANUAL_CHANGES: "true"
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_KEY }}
+      - name: Enable auto-merge for Dependabot PRs
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{github.event.pull_request.html_url}}
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+#      - name: Auto-merge passing dependabot PRs
+#        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+#        uses: ridedott/merge-me-action@v2
+#        with:
+#          # For clarity only. dependabot is default.
+#          GITHUB_LOGIN: dependabot
+#          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+#          ENABLED_FOR_MANUAL_CHANGES: "true"
+#      - name: Auto-merge passing pre-commit-ci PRs
+#        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+#        uses: ridedott/merge-me-action@v2
+#        with:
+#          GITHUB_LOGIN: pre-commit-ci
+#          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+#          ENABLED_FOR_MANUAL_CHANGES: "true"
