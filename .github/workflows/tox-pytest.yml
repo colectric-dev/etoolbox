@@ -59,7 +59,7 @@ jobs:
         run: uv build
       - name: upload package
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: etoolbox-packages
           path: dist/*
