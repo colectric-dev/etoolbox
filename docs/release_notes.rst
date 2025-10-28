@@ -25,6 +25,7 @@ What's New?
 *  :mod:`etoolbox.utils.cloud` now allows multiple cloud accounts to have configs
    and caches with a process for activating the desired one globally. Environment
    variable ``ETB_AZURE_ACTIVE_ACCOUNT`` can override this global setting.
+*  Support Python 3.14.
 
 Bug Fixes
 ^^^^^^^^^

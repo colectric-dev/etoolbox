@@ -14,12 +14,11 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10,<3.15"
 dependencies = [
     "adlfs>=2023.9.0,<2025.9.0",
     "fsspec>=2022.11.0,<2025.10.0",
@@ -224,16 +223,23 @@ pydocstyle.convention = "google"
 
 
 [tool.tox]
-env_list = [ "linters", "docs", "ci" ]
+env_list = [ "linters", "docs", "3.13", "3.14" ]
 
 [tool.tox.env_run_base]
-allowlist_externals = [ "bash", "coverage", "sphinx-build", "pytest", "ruff", "pre-commit" ]
+allowlist_externals = [ "bash", "ruff", "pre-commit" ]
 runner = "uv-venv-runner"
 passenv = [ "ETB_AZURE_SAS_TOKEN", "ETB_AZURE_ACCOUNT_NAME" ]
-extras = [ "qa", "dev", "doc", "optional" ]
+extras = [ "dev", "optional" ]
+commands = [
+    [ "coverage", "erase" ],
+    [ "coverage", "run", "--source={envsitepackagesdir}/etoolbox", "-m", "pytest", "--doctest-modules", "{envsitepackagesdir}/etoolbox", "tests/unit" ],
+    [ "coverage", "lcov", "-o", "coverage.info" ],
+    [ "coverage", "report", "--sort=cover" ],
+]
 
 [tool.tox.env.linters]
 description = "Run the pre-commit, flake8 and bandit linters."
+extras = [ "qa" ]
 commands = [
     [ "pre-commit", "run", "--all-files", "--show-diff-on-failure", "python-no-eval" ],
     [ "pre-commit", "run", "--all-files", "--show-diff-on-failure", "python-no-log-warn" ],
@@ -248,18 +254,10 @@ commands = [
 
 [tool.tox.env.docs]
 description = "Build the HTML docs from scratch using Sphinx."
+extras = [ "doc" ]
 commands = [
     [ "bash", "-c", "rm -rf docs/_build" ],
     [ "doc8", "docs/", "README.rst" ],
     [ "rstcheck", "--config", "pyproject.toml", "--recursive", "./" ],
     [ "sphinx-build", "-b", "html", "docs", "docs/_build/html" ],
-]
-
-[tool.tox.env.ci]
-description = "un all continuous integration (CI) checks & generate test coverage."
-commands = [
-    [ "coverage", "erase" ],
-    [ "coverage", "run", "--source={envsitepackagesdir}/etoolbox", "-m", "pytest", "--doctest-modules", "{envsitepackagesdir}/etoolbox", "tests/unit" ],
-    [ "coverage", "lcov", "-o", "coverage.info" ],
-    [ "coverage", "report", "--sort=cover" ],
 ]

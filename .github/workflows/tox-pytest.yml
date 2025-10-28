@@ -4,12 +4,11 @@ on: [push, pull_request]
 
 jobs:
   ci-test:
-    name: ci-test (${{ matrix.python-version }}, ${{ matrix.os }})
+    name: ci-test ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: ["ubuntu-latest", "windows-latest"]
-        python-version: ["3.11", "3.12", "3.13"]
       fail-fast: false
     env:
       ETB_AZURE_SAS_TOKEN: ${{ secrets.ETB_AZURE_SAS_TOKEN }}
@@ -44,10 +43,10 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
       - name: Install dependencies
         run: uv tool install tox --with tox-uv
 
@@ -55,17 +54,17 @@ jobs:
         run: tox
 
       - name: build package
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' }}
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         run: uv build
       - name: upload package
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' }}
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         uses: actions/upload-artifact@v5
         with:
           name: etoolbox-packages
           path: dist/*
 
       - name: Coveralls
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
+        if: matrix.os == 'ubuntu-latest'
         uses: coverallsapp/github-action@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
