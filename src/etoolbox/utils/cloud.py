@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tomllib
 import warnings
 from contextlib import nullcontext, suppress
 from datetime import datetime
@@ -16,7 +17,6 @@ import click
 import orjson as json
 import pandas as pd
 import polars as pl
-import tomllib
 import yaml
 from fsspec import filesystem
 from fsspec.implementations.cached import WholeFileCacheFileSystem

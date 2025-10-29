@@ -2,10 +2,10 @@
 eToolBox Release Notes
 =======================================================================================
 
-.. _release-v0-4-1.:
+.. _release-v0-4-2.:
 
 ---------------------------------------------------------------------------------------
-0.4.1 (2025-XX-XX)
+0.4.2 (2025-10-29)
 ---------------------------------------------------------------------------------------
 
 What's New?
@@ -26,6 +26,10 @@ What's New?
    and caches with a process for activating the desired one globally. Environment
    variable ``ETB_AZURE_ACTIVE_ACCOUNT`` can override this global setting.
 *  Support Python 3.14.
+*  Added :mod:`polars` versions of pudl helpers :func:`.month_year_to_date`,
+   :func:`.remove_leading_zeros_from_numeric_strings`, :func:`.fix_eia_na`,
+   :func:`.simplify_columns`, :func:`.simplify_strings`, and :func:`.zero_pad_numeric_string`
+   using :func:`functools.singledispatch`.
 
 Bug Fixes
 ^^^^^^^^^

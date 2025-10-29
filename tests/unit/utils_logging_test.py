@@ -18,7 +18,7 @@ def test_json_formatter():
         {
             "message": "test",
             "timestamp": dt.datetime.fromtimestamp(
-                log_record.created, tz=dt.timezone.utc
+                log_record.created, tz=dt.UTC
             ).isoformat(),
         }
     )

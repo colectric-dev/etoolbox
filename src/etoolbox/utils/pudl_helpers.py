@@ -27,14 +27,20 @@ SOFTWARE.
 
 import logging
 import re
+from collections.abc import Sequence
+from functools import singledispatch
 
 import numpy as np
 import pandas as pd
+import polars as pl
+import polars.selectors as cs
 
 logger = logging.getLogger("etoolbox")
 
 
-def fix_int_na(df, columns, float_na=np.nan, int_na=-1, str_na=""):
+def fix_int_na(
+    df: pd.DataFrame, columns, float_na=np.nan, int_na=-1, str_na=""
+) -> pd.DataFrame:
     """Convert NA containing integer columns from float to string.
 
     Numpy doesn't have a real NA value for integers. When pandas stores integer
@@ -75,6 +81,7 @@ def fix_int_na(df, columns, float_na=np.nan, int_na=-1, str_na=""):
     )
 
 
+@singledispatch
 def month_year_to_date(df):
     """Convert all pairs of year/month fields in a dataframe into Date fields.
 
@@ -90,7 +97,7 @@ def month_year_to_date(df):
         * find and use a _day$ column as well
         * allow specification of default month & day values, if none are found.
         * allow specification of lists of year, month, and day columns to be
-        combined, rather than automataically finding all the matching ones.
+        combined, rather than automatically finding all the matching ones.
         * Do the Right Thing when invalid or NA values are encountered.
 
     Args:
@@ -101,39 +108,29 @@ def month_year_to_date(df):
         pandas.DataFrame: A DataFrame in which the year/month fields have been
         converted into Date fields.
     """
+    raise NotImplementedError
+
+
+@month_year_to_date.register(pd.DataFrame)
+def _(df):
     df = df.copy()
-    month_regex = "_month$"
-    year_regex = "_year$"
+    mo_re, yr_re = "_month$", "_year$"
     # Columns that match our month or year patterns.
-    month_cols = list(df.filter(regex=month_regex).columns)
-    year_cols = list(df.filter(regex=year_regex).columns)
-
     # Base column names that don't include the month or year pattern
-    months_base = [re.sub(month_regex, "", m) for m in month_cols]
-    years_base = [re.sub(year_regex, "", y) for y in year_cols]
-
-    # We only want to retain columns that have BOTH month and year
-    # matches -- otherwise there's no point in creating a Date.
-    date_base = [base for base in months_base if base in years_base]
+    yr_base = [re.sub(yr_re, "", y) for y in df.filter(regex=yr_re)]
 
     # For each base column that DOES have both a month and year,
     # We need to grab the real column names corresponding to each,
     # so we can access the values in the data frame, and use them
     # to create a corresponding Date column named [BASE]_date
     month_year_date = []
-    for base in date_base:
-        base_month_regex = f"^{base}{month_regex}"
-        month_col = list(df.filter(regex=base_month_regex).columns)
-        if not len(month_col) == 1:
-            raise AssertionError()
-        month_col = month_col[0]
-        base_year_regex = f"^{base}{year_regex}"
-        year_col = list(df.filter(regex=base_year_regex).columns)
-        if not len(year_col) == 1:
-            raise AssertionError()
-        year_col = year_col[0]
-        date_col = f"{base}_date"
-        month_year_date.append((month_col, year_col, date_col))
+    for m in df.filter(regex=mo_re):
+        # We only want to retain columns that have BOTH month and year
+        # matches -- otherwise there's no point in creating a Date.
+        if (base := re.sub(mo_re, "", m)) in yr_base:
+            (month_col,) = df.filter(regex=f"^{base}{mo_re}")
+            (year_col,) = df.filter(regex=f"^{base}{yr_re}")
+            month_year_date.append((month_col, year_col, f"{base}_date"))
 
     for month_col, year_col, date_col in month_year_date:
         df = fix_int_na(df, columns=[year_col, month_col])
@@ -152,6 +149,30 @@ def month_year_to_date(df):
     return df
 
 
+@month_year_to_date.register(pl.DataFrame | pl.LazyFrame)
+def _[T: pl.DataFrame | pl.LazyFrame](df: T) -> T:
+    mo_re, yr_re = "_month$", "_year$"
+    # Base column names that don't include the month or year pattern
+    yr_base = [
+        re.sub(yr_re, "", y)
+        for y in df.lazy().select(cs.matches(yr_re)).collect_schema().names()
+    ]
+    # For each base column that DOES have both a month and year,
+    # We need to grab the real column names corresponding to each,
+    # so we can access the values in the data frame, and use them
+    # to create a corresponding Date column named [BASE]_date
+    to_exclude, new_cols = [], {}
+    for m in df.lazy().select(cs.matches(mo_re)).collect_schema().names():
+        # We only want to retain columns that have BOTH month and year
+        # matches -- otherwise there's no point in creating a Date.
+        if (base := re.sub(mo_re, "", m)) in yr_base:
+            to_exclude.extend((m_ := f"^{base}{mo_re}", y_ := f"^{base}{yr_re}"))
+            new_cols[f"{base}_date"] = pl.datetime(pl.col(y_), pl.col(m_), 1)
+
+    return df.select(pl.exclude(*to_exclude), **new_cols)
+
+
+@singledispatch
 def remove_leading_zeros_from_numeric_strings(
     df: pd.DataFrame, col_name: str
 ) -> pd.DataFrame:
@@ -177,6 +198,11 @@ def remove_leading_zeros_from_numeric_strings(
         A DataFrame without leading zeros for numeric string values in the desired
         column.
     """
+    raise NotImplementedError
+
+
+@remove_leading_zeros_from_numeric_strings.register(pd.DataFrame)
+def _(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
     leading_zeros = df[col_name].str.contains(r"^0+\d+$").fillna(value=False)
     if leading_zeros.any():
         logger.debug("Fixing leading zeros in %s column", col_name)
@@ -188,10 +214,21 @@ def remove_leading_zeros_from_numeric_strings(
     return df
 
 
+@remove_leading_zeros_from_numeric_strings.register(pl.DataFrame | pl.LazyFrame)
+def _[T: pl.DataFrame | pl.LazyFrame](df: T, col_name: str) -> T:
+    return df.with_columns(
+        pl.when(pl.col(col_name).str.contains(r"^0+\d+$"))
+        .then(pl.col(col_name).str.replace(r"^0+", ""))
+        .otherwise(pl.col(col_name))
+        .alias(col_name)
+    )
+
+
+@singledispatch
 def fix_eia_na(df):
     """Replace common ill-posed EIA NA spreadsheet values with np.nan.
 
-    Currently replaces empty string, single decimal points with no numbers,
+    Currently, replaces empty string, single decimal points with no numbers,
     and any single whitespace character with np.nan.
 
     Args:
@@ -200,6 +237,11 @@ def fix_eia_na(df):
     Returns:
         pandas.DataFrame: The cleaned DataFrame.
     """
+    raise NotImplementedError
+
+
+@fix_eia_na.register(pd.DataFrame)
+def _(df: pd.DataFrame) -> pd.DataFrame:
     return df.replace(
         to_replace=[
             r"^\.$",  # Nothing but a decimal point
@@ -210,6 +252,23 @@ def fix_eia_na(df):
     )
 
 
+@fix_eia_na.register(pl.DataFrame | pl.LazyFrame)
+def _[T: pl.DataFrame | pl.LazyFrame](df: T) -> T:
+    return df.with_columns(
+        cs.by_dtype(pl.Utf8)
+        .str.replace(
+            r"^\.$",  # Nothing but a decimal point
+            "__to_null__",
+        )
+        .str.replace(
+            r"^\s*$",  # The empty string and entirely whitespace strings
+            "__to_null__",
+        )
+        .replace({"__to_null__": None})
+    )
+
+
+@singledispatch
 def simplify_columns(df):
     """Simplify column labels for use as snake_case database fields.
 
@@ -221,14 +280,13 @@ def simplify_columns(df):
     * Replacing all remaining whitespace with underscores.
 
     Args:
-        df (pandas.DataFrame): The DataFrame to clean.
-
-    Returns:
-        pandas.DataFrame: The cleaned DataFrame.
-
-    Todo:
-        Update docstring.
+        df : The DataFrame to clean.
     """
+    raise NotImplementedError
+
+
+@simplify_columns.register(pd.DataFrame)
+def _(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = (
         df.columns.str.replace(r"[^0-9a-zA-Z]+", " ", regex=True)
         .str.strip()
@@ -239,7 +297,18 @@ def simplify_columns(df):
     return df
 
 
-def simplify_strings(df, columns):
+@simplify_columns.register(pl.DataFrame | pl.LazyFrame)
+def _[T: pl.DataFrame | pl.LazyFrame](df: T) -> T:
+    def renamer(string: str) -> str:
+        return re.sub(
+            r"\s+", " ", re.sub(r"[^0-9a-zA-Z]+", " ", string).strip().casefold()
+        ).replace(" ", "_")
+
+    return df.rename(renamer)
+
+
+@singledispatch
+def simplify_strings(df, columns: Sequence[str]):
     """Simplify the strings contained in a set of dataframe columns.
 
     Performs several operations to simplify strings for comparison and parsing purposes.
@@ -250,13 +319,18 @@ def simplify_strings(df, columns):
     Leaves null values unaltered. Casts other values with astype(str).
 
     Args:
-        df (pandas.DataFrame): DataFrame whose columns are being cleaned up.
+        df: DataFrame whose columns are being cleaned up.
         columns (iterable): The labels of the string columns to be simplified.
 
     Returns:
         pandas.DataFrame: The whole DataFrame that was passed in, with
         the string columns cleaned up.
     """
+    raise NotImplementedError
+
+
+@simplify_strings.register(pd.DataFrame)
+def _(df: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
     out_df = df.copy()
     for col in columns:
         if col in out_df.columns:
@@ -271,6 +345,18 @@ def simplify_strings(df, columns):
     return out_df
 
 
+@simplify_strings.register(pl.DataFrame | pl.LazyFrame)
+def _[T: pl.DataFrame | pl.LazyFrame](df: T, columns: Sequence[str]) -> T:
+    return df.with_columns(
+        pl.col(*columns)
+        .str.replace(r"[\x00-\x1f\x7f-\x9f]", "")
+        .str.strip_chars()
+        .str.to_lowercase()
+        .str.replace(r"\s+", " ")
+    )
+
+
+@singledispatch
 def zero_pad_numeric_string(
     col: pd.Series,
     n_digits: int,
@@ -301,6 +387,11 @@ def zero_pad_numeric_string(
         A Series of nullable strings, containing only all-numeric strings
         having length n_digits, padded with leading zeroes if necessary.
     """
+    raise NotImplementedError
+
+
+@zero_pad_numeric_string.register(pd.Series)
+def _(col: pd.Series, n_digits: int) -> pd.Series:
     out_col = (
         col.astype("string")
         # Remove decimal points and any digits following them.
@@ -323,6 +414,34 @@ def zero_pad_numeric_string(
             f"Failed to generate zero-padded numeric strings of length {n_digits}."
         )
     return out_col
+
+
+@zero_pad_numeric_string.register(pl.Expr)
+def _(col: pl.Expr, n_digits: int) -> pl.Expr:
+    transformed = (
+        col
+        # Remove decimal points and any digits following them.
+        # This turns floating point strings into integer strings
+        .str.replace(r"[\.]+\d*", "")
+        # Remove any whitespace
+        .str.replace(r"\s+", "")
+        # Replace anything that's not entirely digits with NA
+        .str.replace(r"[^\d]+", "__to_null__")
+        # Set any string longer than n_digits to NA
+        .str.replace(f"[\\d]{{{n_digits + 1},}}", "__to_null__")
+    )
+    return (
+        pl.when(transformed.str.contains("__to_null__"))
+        .then(pl.lit(None))
+        .otherwise(
+            transformed
+            # Pad the numeric string with leading zeroes to n_digits length
+            .str.zfill(n_digits)
+            # All-zero ZIP & FIPS codes are invalid.
+            # Also catches empty strings that were zero padded.
+            .replace({n_digits * "0": None})
+        )
+    )
 
 
 def weighted_average(df, data_col, weight_col, by):
