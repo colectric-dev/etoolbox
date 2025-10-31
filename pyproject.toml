@@ -27,7 +27,7 @@ dependencies = [
     "platformdirs>3.0,<4.6",
     "polars>=0.20,<1.35",
     "pyarrow>=9,<23",
-    "s3fs>=2022.11.0, <2025.10.0",
+    "s3fs>=2022.11.0, <2025.11.0",
     "tzdata>=2022.7;platform_system=='Windows'",
     "click>8,<9",
     "pyyaml>=6.0.2",
