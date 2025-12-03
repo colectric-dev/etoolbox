@@ -5,7 +5,7 @@ eToolBox Release Notes
 .. _release-v0-4-2.:
 
 ---------------------------------------------------------------------------------------
-0.4.2 (2025-10-29)
+0.4.2 (2025-XX-XX)
 ---------------------------------------------------------------------------------------
 
 What's New?
@@ -30,6 +30,7 @@ What's New?
    :func:`.remove_leading_zeros_from_numeric_strings`, :func:`.fix_eia_na`,
    :func:`.simplify_columns`, :func:`.simplify_strings`, and :func:`.zero_pad_numeric_string`
    using :func:`functools.singledispatch`.
+*  Added :func:`.dl_pudl_table` to support semi-manually managed pudl caches.
 
 Bug Fixes
 ^^^^^^^^^

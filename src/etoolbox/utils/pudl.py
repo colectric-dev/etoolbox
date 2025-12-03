@@ -14,7 +14,7 @@ from fsspec import filesystem
 from fsspec.implementations.cached import WholeFileCacheFileSystem
 from platformdirs import user_cache_path, user_config_path
 
-from etoolbox.utils.misc import have_internet
+from etoolbox.utils.misc import download, have_internet
 
 logger = logging.getLogger("etoolbox")
 TOKEN_PATH = user_config_path("rmi.pudl") / ".pudl-access-key.json"
@@ -276,6 +276,33 @@ def pl_read_pudl(
     ).collect()
 
 
+def dl_pudl_table(table_name: str, release: str, cache_dir: Path) -> Path:
+    """Download PUDL table from AWS and store it in cache if not already there.
+
+    Args:
+        table_name: name of table in PUDL sqlite database
+        release: ``nightly``, ``stable`` or versioned, use :func:`.pudl_list` to
+            see releases.
+        cache_dir: location to cache the pudl table
+
+    """
+    dl = False
+    if not (ptable := cache_dir / f"{release}_{table_name}.parquet").exists():
+        dl = True
+    else:
+        try:
+            _ = pl.scan_parquet(ptable).head(1).collect()
+        except pl.exceptions.PolarsError:
+            ptable.unlink()
+            dl = True
+    if dl:
+        download(
+            f"https://s3.us-west-2.amazonaws.com/pudl.catalyst.coop/{release}/{table_name}.parquet",
+            ptable,
+        )
+    return ptable
+
+
 def generator_ownership(
     year: int | None = None, release: str = "nightly"
 ) -> pl.DataFrame:
@@ -290,9 +317,9 @@ def generator_ownership(
     --------
     >>> from etoolbox.utils.pudl import generator_ownership
     >>>
-    >>> generator_ownership(year=2023, release="v2024.10.0").sort(
-    ...     "plant_id_eia"
-    ... ).select("plant_id_eia", "generator_id", "owner_utility_id_eia").head()
+    >>> generator_ownership(year=2023, release="v2025.9.1").sort("plant_id_eia").select(
+    ...     "plant_id_eia", "generator_id", "owner_utility_id_eia"
+    ... ).head()
     shape: (5, 3)
     ┌──────────────┬──────────────┬──────────────────────┐
     │ plant_id_eia ┆ generator_id ┆ owner_utility_id_eia │
@@ -322,7 +349,7 @@ def generator_ownership(
         else year
     )
     return (
-        pl_scan_pudl("_out_eia__yearly_generators", release=release)
+        pl_scan_pudl("out_eia__yearly_generators", release=release)
         .filter(
             (pl.col("data_maturity") == "final")
             & (pl.col("report_date").dt.year() == year)
