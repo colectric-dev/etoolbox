@@ -90,6 +90,14 @@ platforms = [ "osx-arm64", "linux-64" ]
 max-line-length = 88
 ignore-path = "docs/_build"
 
+[tool.coverage]
+run.parallel = true
+run.branch = true
+run.source = [ "etoolbox" ]
+paths.source = [ "src", ".tox/3*/**/site-packages" ]
+report.omit = [ "*/_version.py" ]
+report.show_missing = true
+
 [tool.pytest.ini_options]
 testpaths = [ "." ]
 addopts = [ "--verbose", "--doctest-modules" ]
@@ -223,7 +231,12 @@ pydocstyle.convention = "google"
 
 
 [tool.tox]
-env_list = [ "linters", "docs", "3.13", "3.14" ]
+env_list = [ "linters", "docs", "prep", "3.13", "3.14", "coverage" ]
+
+[tool.tox.env.prep]
+skip_install = true
+deps = "coverage"
+commands = [ [ "coverage", "erase" ] ]
 
 [tool.tox.env_run_base]
 allowlist_externals = [ "bash", "ruff", "pre-commit" ]
@@ -231,9 +244,15 @@ runner = "uv-venv-runner"
 passenv = [ "ETB_AZURE_SAS_TOKEN", "ETB_AZURE_ACCOUNT_NAME" ]
 extras = [ "dev", "optional" ]
 commands = [
-    [ "coverage", "erase" ],
     [ "coverage", "run", "--source={envsitepackagesdir}/etoolbox", "-m", "pytest", "--doctest-modules", "{envsitepackagesdir}/etoolbox", "tests/unit" ],
-    [ "coverage", "lcov", "-o", "coverage.info" ],
+]
+
+[tool.tox.env.coverage]
+depends = "3.{13,14}"
+skip_install = true
+deps = "coverage"
+commands = [
+    [ "coverage", "combine" ],
     [ "coverage", "report", "--sort=cover" ],
 ]
 

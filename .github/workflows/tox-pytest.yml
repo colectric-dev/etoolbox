@@ -63,22 +63,54 @@ jobs:
           name: etoolbox-packages
           path: dist/*
 
-      - name: Coveralls
+      - name: Upload coverage data
         if: matrix.os == 'ubuntu-latest'
-        uses: coverallsapp/github-action@master
+        uses: actions/upload-artifact@v5
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: ./coverage.info
+          name: coverage-data
+          path: .coverage*
+          include-hidden-files: true
+          if-no-files-found: ignore
 
-  finish:
-    needs: ci-test
+  coverage:
+    name: Ensure 80% test coverage
     runs-on: ubuntu-latest
+    needs: ci-test
+    if: always()
+
     steps:
-      - name: Coveralls Finished
-        uses: coverallsapp/github-action@master
+      - uses: actions/checkout@v6
         with:
-          github-token: ${{ secrets.github_token }}
-          parallel-finished: true
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Download coverage data
+        uses: actions/download-artifact@v6
+        with:
+          name: coverage-data
+
+      - name: Report coverage and fail if it's <80%.
+        run: |
+          uv tool install coverage
+
+          coverage html --skip-covered --skip-empty
+
+          # Report and write to summary.
+          coverage report --format=markdown >> $GITHUB_STEP_SUMMARY
+
+          # Report again and fail if under 80%.
+          coverage report --fail-under=80
+
+      - name: Upload HTML report if check failed.
+        uses: actions/upload-artifact@v5
+        with:
+          name: html-report
+          path: htmlcov
+        if: ${{ failure() }}
 
   collector:
     needs: [ci-test]

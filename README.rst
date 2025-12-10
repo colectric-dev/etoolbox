@@ -11,9 +11,6 @@ eToolBox: A set of tools and functions we use across projects
    :target: https://colectric-dev.github.io/etoolbox/
    :alt: GitHub Pages Status
 
-.. image:: https://coveralls.io/repos/github/colectric-dev/etoolbox/badge.svg?branch=main
-   :target: https://coveralls.io/github/colectric-dev/etoolbox?branch=main
-
 .. image:: https://img.shields.io/badge/code%20style-black-000000.svg
    :target: https://github.com/psf/black>
    :alt: Any color you want, so long as it's black.
