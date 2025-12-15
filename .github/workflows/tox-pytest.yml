@@ -58,14 +58,14 @@ jobs:
         run: uv build
       - name: upload package
         if: ${{ matrix.os == 'ubuntu-latest' }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: etoolbox-packages
           path: dist/*
 
       - name: Upload coverage data
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-data
           path: .coverage*
@@ -106,7 +106,7 @@ jobs:
           coverage report --fail-under=80
 
       - name: Upload HTML report if check failed.
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: html-report
           path: htmlcov
