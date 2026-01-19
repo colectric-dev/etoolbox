@@ -26,7 +26,7 @@ dependencies = [
     "pandas>= 1.4,< 2.4",
     "platformdirs>3.0,<4.6",
     "polars>=0.20,<1.38",
-    "pyarrow>=9,<23",
+    "pyarrow>=9,<24",
     "s3fs>=2022.11.0, <2026.2.0",
     "tzdata>=2022.7;platform_system=='Windows'",
     "click>8,<9",
