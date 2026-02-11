@@ -23,7 +23,7 @@ dependencies = [
     "adlfs>=2023.9.0,<2026.3.0",
     "fsspec>=2022.11.0,<2026.3.0",
     "orjson>=3.8,<3.12",
-    "pandas>= 1.4,< 2.4",
+    "pandas>= 1.4,< 3.1",
     "platformdirs>3.0,<4.6",
     "polars>=0.20,<1.39",
     "pyarrow>=9,<24",
