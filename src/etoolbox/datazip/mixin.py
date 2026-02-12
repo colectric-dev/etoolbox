@@ -50,8 +50,8 @@ class IOMixin:
     And we can bring it back, as if it was pickled. Usually.
 
     >>> inst = MyClass.from_file(buffer)
-    >>> type(inst.bar)
-    <class 'pandas.core.series.Series'>
+    >>> type(inst.bar)  # doctest: +ELLIPSIS
+    <class 'pandas...Series'>
 
     >>> inst.foo
     {'a': 1, 'b': (1, 2, 3), 'c': array([1, 2, 4])}

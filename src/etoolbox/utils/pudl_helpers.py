@@ -247,7 +247,7 @@ def _(df: pd.DataFrame) -> pd.DataFrame:
             r"^\.$",  # Nothing but a decimal point
             r"^\s*$",  # The empty string and entirely whitespace strings
         ],
-        value=np.nan,
+        value=pd.NA,
         regex=True,
     )
 

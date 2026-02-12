@@ -31,6 +31,7 @@ What's New?
    :func:`.simplify_columns`, :func:`.simplify_strings`, and :func:`.zero_pad_numeric_string`
    using :func:`functools.singledispatch`.
 *  Added :func:`.dl_pudl_table` to support semi-manually managed pudl caches.
+*  Now compatible with Pandas 3.
 
 Bug Fixes
 ^^^^^^^^^

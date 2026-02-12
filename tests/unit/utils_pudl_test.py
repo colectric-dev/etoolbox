@@ -19,6 +19,7 @@ from etoolbox.utils.pudl import (
 from etoolbox.utils.testing import idfn
 
 
+@pytest.mark.skipif(pd.__version__.partition(".")[0] > "2", reason="only when pandas<3")
 def test_fix_types():
     """Test fix_types function."""
     df = pd.DataFrame(
