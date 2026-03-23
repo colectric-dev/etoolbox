@@ -31,7 +31,7 @@ jobs:
             az account show
       - name: Azure account info Windows
         if: ${{ env.ETB_AZURE_SAS_TOKEN == 'use_azure_cli' && matrix.os == 'windows-latest'}}
-        uses: azure/powershell@v2
+        uses: azure/powershell@v3
         with:
           azPSVersion: "latest"
           inlineScript: |
