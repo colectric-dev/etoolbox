@@ -24,7 +24,7 @@ jobs:
           enable-AzPSSession: true
       - name: Azure account info Ubuntu
         if: ${{ env.ETB_AZURE_SAS_TOKEN == 'use_azure_cli' && matrix.os == 'ubuntu-latest'}}
-        uses: azure/cli@v2
+        uses: azure/cli@v3
         with:
           azcliversion: latest
           inlineScript: |
