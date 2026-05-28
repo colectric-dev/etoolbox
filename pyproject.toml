@@ -24,7 +24,7 @@ dependencies = [
     "fsspec>=2022.11.0,<2026.5.0",
     "orjson>=3.8,<3.12",
     "pandas>= 1.4,< 3.1",
-    "platformdirs>3.0,<4.10",
+    "platformdirs>3.0,<4.11",
     "polars>=1.39.3,<1.42",
     "pyarrow>=9,<25",
     "s3fs>=2022.11.0, <2026.5.0",
